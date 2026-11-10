@@ -70,7 +70,9 @@ def positions(trades: DataFrame, fx: DataFrame) -> DataFrame:
                          f"(trade {row.trade_id})")
     notional = (F.col("quantity").cast(T.DecimalType(12, 0)) * F.col("price") * F.col("rate"))
     signed = F.when(F.col("side") == "BUY", F.col("quantity")).otherwise(-F.col("quantity"))
-    return (priced.withColumn("notional_chf", F.round(notional, 2))
+    # C# Math.Round(decimal, 2) is banker's rounding (half to even); Spark's round() is
+    # half up and broke parity on 308 positions. bround() is Spark's half-to-even.
+    return (priced.withColumn("notional_chf", F.bround(notional, 2))
             .groupBy("counterparty_id", "instrument_id")
             .agg(F.sum(signed).alias("net_quantity"),
                  F.sum("notional_chf").alias("gross_notional_chf"),
