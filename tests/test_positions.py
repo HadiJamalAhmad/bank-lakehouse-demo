@@ -1,11 +1,14 @@
 """Business rules of the migrated job, each on a tiny hand-written case."""
 
+import csv
+import tempfile
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
-from bank_lakehouse.jobs.positions import FX, TRADES, positions
+from bank_lakehouse.jobs.positions import FX, TRADES, positions, read_csv
 
 D = Decimal
 
@@ -25,7 +28,16 @@ def trade(tid, version=1, day=date(2026, 1, 5), cpty="CP001", instr="ISIN0001", 
 
 
 def run(spark, trades, fx=()):
-    df = positions(spark.createDataFrame(trades, TRADES), spark.createDataFrame(list(fx), FX))
+    """Write the case to CSV and read it back through the job's real reader (no Python
+    workers: Spark's in-memory createDataFrame crashes them on Windows)."""
+    tmp = Path(tempfile.mkdtemp())
+    for name, rows, schema in (("trades.csv", trades, TRADES), ("fx.csv", fx, FX)):
+        with open(tmp / name, "w", newline="") as fh:
+            w = csv.writer(fh, lineterminator="\n")
+            w.writerow(schema.fieldNames())
+            w.writerows(rows)
+    df = positions(read_csv(spark, str(tmp / "trades.csv"), TRADES),
+                   read_csv(spark, str(tmp / "fx.csv"), FX))
     return {(r.counterparty_id, r.instrument_id): r for r in df.collect()}
 
 
