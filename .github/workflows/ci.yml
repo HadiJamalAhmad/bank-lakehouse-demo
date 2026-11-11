@@ -1,0 +1,42 @@
+# CI for bank-lakehouse-demo.
+#
+#   every push and pull request: lint (ruff), then the tests, including the end-to-end
+#   parity test: the legacy C# job and the PySpark port run on the same generated
+#   trades and must agree on every position, to the cent.
+#
+# The parity test skips itself when no .NET SDK is found. Here the SDK is installed, and
+# the run fails if any test was skipped, so a green run always means parity was checked.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: uv sync --extra dev --frozen
+      - run: uv run ruff check .
+      - name: tests (parity must not be skipped)
+        run: |
+          uv run pytest -q -rs | tee pytest.log
+          ! grep -q "SKIPPED" pytest.log
