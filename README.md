@@ -1,5 +1,9 @@
 # bank-lakehouse-demo
 
+[![ci](https://github.com/HadiJamalAhmad/bank-lakehouse-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/HadiJamalAhmad/bank-lakehouse-demo/actions/workflows/ci.yml)
+
+Results page: https://bank-lakehouse-demo.vercel.app
+
 A bank lakehouse in miniature: PySpark pipelines on trade data, and a C# to Python migration
 proven by a row-by-row parity test.
 
@@ -35,4 +39,10 @@ order, weekend trades, prices with 3 decimals so half cents really occur.
 3. Data model: trade fact, instrument / counterparty / date dimensions; exposure by counterparty in SQL.
 4. Orchestration and data quality: an Airflow DAG; a failing quality check stops the load.
 5. On-call drill: an alert, root cause in the logs, targeted rerun, short post-mortem.
-6. CI/CD: GitHub Actions running lint, tests and the parity test.
+6. ~~CI/CD: GitHub Actions running lint, tests and the parity test.~~ Done: `.github/workflows/ci.yml`,
+   which installs the .NET SDK and fails the run if the parity test is skipped.
+
+## Results page
+
+`site/index.html` is a static page with the real parity outputs (before and after the fix),
+deployed on Vercel from the `site/` folder: https://bank-lakehouse-demo.vercel.app

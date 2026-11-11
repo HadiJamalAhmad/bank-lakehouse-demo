@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bank Lakehouse Demo</title>
+<meta name="description" content="A legacy C# position-aggregation job migrated to PySpark, proven by a row-by-row parity test that caught a banker's-rounding bug on 308 of 2,399 positions.">
+<style>
+:root{--bg:#f8fafc;--panel:#ffffff;--ink:#0f172a;--muted:#475569;--line:#e2e8f0;--acc:#0e7490;--ok:#15803d;--bad:#b91c1c;--code:#0f172a;--codeink:#e2e8f0}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1220;--panel:#111a2e;--ink:#e2e8f0;--muted:#94a3b8;--line:#1e293b;--acc:#22d3ee;--ok:#4ade80;--bad:#f87171;--code:#020617;--codeink:#e2e8f0}}
+:root[data-theme="dark"]{--bg:#0b1220;--panel:#111a2e;--ink:#e2e8f0;--muted:#94a3b8;--line:#1e293b;--acc:#22d3ee;--ok:#4ade80;--bad:#f87171;--code:#020617;--codeink:#e2e8f0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+.wrap{max-width:960px;margin:0 auto;padding:40px 16px 64px}
+.kick{color:var(--acc);font-weight:700;font-size:13px;letter-spacing:1.4px;text-transform:uppercase}
+h1{font-size:clamp(28px,5vw,42px);line-height:1.15;margin:8px 0 12px}
+h2{font-size:22px;margin:40px 0 10px}
+p{margin:8px 0;color:var(--ink)}
+.lead{font-size:18px;color:var(--muted);max-width:720px}
+a{color:var(--acc)}
+.links{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 6px}
+.btn{display:inline-block;padding:9px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);text-decoration:none;font-weight:600}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-top:26px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.stat b{display:block;font-size:30px;line-height:1.1}
+.stat span{color:var(--muted);font-size:14px}
+.bad{color:var(--bad)}.ok{color:var(--ok)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.card h3{font-size:16px;margin-bottom:6px}
+pre{background:var(--code);color:var(--codeink);border-radius:10px;padding:14px 16px;overflow-x:auto;font:13.5px/1.5 Consolas,"Cascadia Mono",ui-monospace,monospace;margin:10px 0}
+.add{color:#86efac}.del{color:#fca5a5}.dim{color:#94a3b8}
+ol,ul{margin:6px 0 6px 22px}li{margin:3px 0}
+table{width:100%;border-collapse:collapse;font-size:15px;margin:8px 0}
+td,th{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+footer{margin-top:48px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="kick">Bank lakehouse demo · steps 1 and 6 of 6 done</div>
+<h1>Migrating a legacy C# banking job to PySpark, and proving nothing changed</h1>
+<p class="lead">A position-aggregation job of the kind a bank wants to retire, ported to PySpark. Both run on the same
+20,000 trades, and a parity test compares every position to the cent. It caught a real bug on the first port.</p>
+<div class="links">
+  <a class="btn primary" href="https://github.com/HadiJamalAhmad/bank-lakehouse-demo">Code on GitHub</a>
+  <a class="btn" href="https://github.com/HadiJamalAhmad/bank-lakehouse-demo/actions">CI runs</a>
+  <a class="btn" href="https://github.com/HadiJamalAhmad/bank-lakehouse-demo/commit/ad783b5">The fix (commit ad783b5)</a>
+</div>
+
+<div class="stats">
+  <div class="stat"><b>20,000</b><span>synthetic trades: amendments, cancellations, out-of-order events, weekend trades</span></div>
+  <div class="stat"><b>2,399</b><span>positions per counterparty and instrument, compared one by one</span></div>
+  <div class="stat"><b class="bad">308</b><span>positions off by one cent after the first port</span></div>
+  <div class="stat"><b class="ok">0</b><span>differences after the fix</span></div>
+</div>
+
+<h2>The bug the parity test caught</h2>
+<p>The C# job rounds each trade's CHF notional with <code>Math.Round(decimal, 2)</code>. For decimals this is
+banker's rounding: halves go to the even cent. Spark's <code>round()</code> rounds halves up. On prices with three
+decimals, half cents really occur, and 308 of 2,399 positions came out one cent higher.</p>
+
+<p>Real output of the parity tool on the first port (commit 00d5f51), re-run on 11 Nov 2026:</p>
+<pre>$ uv run python tools/parity.py out/legacy_positions.csv out/migrated_positions.csv
+rows compared: 2399
+<span class="del">DIFFERENCES: 308</span>
+  ('CP001', 'ISIN0004') gross_notional_chf: legacy=4414734.41 migrated=4414734.43
+  ('CP001', 'ISIN0006') gross_notional_chf: legacy=3419373.79 migrated=3419373.80
+  ('CP001', 'ISIN0016') gross_notional_chf: legacy=5010816.53 migrated=5010816.54
+  ('CP001', 'ISIN0018') gross_notional_chf: legacy=579455.79 migrated=579455.80
+  ('CP002', 'ISIN0051') gross_notional_chf: legacy=57239.99 migrated=57240.00
+  <span class="dim">... and 293 more</span></pre>
+
+<p>The fix is one function, with the reason written next to it:</p>
+<pre><span class="dim">src/bank_lakehouse/jobs/positions.py</span>
+<span class="del">-    return (priced.withColumn("notional_chf", F.round(notional, 2))</span>
+<span class="add">+    # C# Math.Round(decimal, 2) is banker's rounding (half to even); Spark's round() is</span>
+<span class="add">+    # half up and broke parity on 308 positions. bround() is Spark's half-to-even.</span>
+<span class="add">+    return (priced.withColumn("notional_chf", F.bround(notional, 2))</span></pre>
+
+<p>Real output after the fix, same data:</p>
+<pre>$ uv run python tools/parity.py out/legacy_positions.csv out/migrated_positions.csv
+rows compared: 2399
+<span class="add">PARITY OK: 0 differences</span></pre>
+
+<h2>What the job does</h2>
+<div class="two">
+  <div class="card"><h3>Business rules (both versions)</h3>
+    <ol>
+      <li>An amended trade counts only in its latest version.</li>
+      <li>Cancelled trades are dropped.</li>
+      <li>Notional converted to CHF at the FX rate of the trade date, or the previous available rate. No rate is an error, never a silent zero.</li>
+      <li>Each trade's CHF notional rounded to the cent, half to even.</li>
+      <li>Per counterparty and instrument: net quantity, gross CHF notional, number of trades.</li>
+    </ol>
+  </div>
+  <div class="card"><h3>How it is verified</h3>
+    <ul>
+      <li>Unit tests on each business rule (pytest, local Spark).</li>
+      <li>End-to-end parity test: generate trades, run the real C# job and the PySpark port, compare on the business key with exact decimals.</li>
+      <li>CI on every push: lint, then all tests. The run fails if the parity test is skipped, so green always means parity was checked.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Reproduce it</h2>
+<pre>uv sync --extra dev
+uv run python -m bank_lakehouse.generate data/raw --trades 20000
+dotnet run -c Release --project legacy/PositionAggregator -- data/raw/trades.csv data/raw/fx_rates.csv out/legacy_positions.csv
+uv run python -m bank_lakehouse.jobs.positions data/raw/trades.csv data/raw/fx_rates.csv out/migrated_positions.csv
+uv run python tools/parity.py out/legacy_positions.csv out/migrated_positions.csv
+uv run pytest -q</pre>
+<p>Needs Python 3.12 with uv, Java 17+ for Spark, and the .NET 8 SDK for the legacy job. The data is synthetic and deterministic.</p>
+
+<h2>Roadmap</h2>
+<table>
+  <tr><th>Step</th><th>What</th><th>Status</th></tr>
+  <tr><td>1</td><td>Legacy C# job migrated to PySpark, proven by parity</td><td><span class="tag ok">done</span></td></tr>
+  <tr><td>2</td><td>Lakehouse layers on Apache Iceberg: raw, cleaned, business, with time travel</td><td><span class="tag">planned</span></td></tr>
+  <tr><td>3</td><td>Data model: trade fact, instrument, counterparty and date dimensions; exposure by counterparty in SQL</td><td><span class="tag">planned</span></td></tr>
+  <tr><td>4</td><td>Orchestration and data quality: an Airflow DAG where a failing check stops the load</td><td><span class="tag">planned</span></td></tr>
+  <tr><td>5</td><td>On-call drill: an alert, root cause in the logs, targeted rerun, short post-mortem</td><td><span class="tag">planned</span></td></tr>
+  <tr><td>6</td><td>CI/CD: lint, tests and the parity test on every push</td><td><span class="tag ok">done</span></td></tr>
+</table>
+
+<footer>Hadi Jamal Ahmad · <a href="https://github.com/HadiJamalAhmad">github.com/HadiJamalAhmad</a> · Data is synthetic: no real trades, counterparties or prices.</footer>
+</div>
+</body>
+</html>
